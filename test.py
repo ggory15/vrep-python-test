@@ -1,7 +1,7 @@
 from Bridge import connection 
 from Bridge import configuration as cf
+from Bridge import kbhit
 import numpy as np
-import time
 
 vrep = connection.clientsever()
 client = vrep.client
@@ -17,23 +17,58 @@ vrep.getMotorHandle()
 
 client.simxSynchronous(True)
 client.simxGetSimulationStepStarted(client.simxDefaultSubscriber(simulationStepStarted))
-q, qdot =vrep.getMotorState()
 client.simxGetSimulationStepDone(client.simxDefaultSubscriber(simulationStepDone))
 client.simxStartSimulation(client.simxDefaultPublisher())
 
-q, qdot =vrep.getMotorState()
+is_simulation_run = True
+exit_flag = False
+is_first = True
+kbd = kbhit.KBHit()
+qdes = []
 
+from Controller import robot
+robot = robot.RobotState()
+robot.updateKinematics(np.matrix(np.zeros(6)).T, np.matrix(np.zeros(6)).T)
+robot.placement('wrist_3_joint') # urdf index
 
-startTime=time.time()
-while time.time()<startTime+5: 
-    if vrep.doNextStep:
-        vrep.doNextStep=False        
-        client.simxSynchronousTrigger()
-        #q, qdot =vrep.getMotorState()
-        vrep.setMotorState(np.array(np.ones(cf.dof)*1.0))   
+while not exit_flag:    
+    if kbd.kbhit():
+        key = kbd.getch()
+        if key == 'q':
+            is_simulation_run = False
+            exit_flag = True
+        elif key == '\t': # TAB
+            if is_simulation_run:
+                print "SIMULATION PAUSE"
+                is_simulation_run = False
+            else:
+                print "SIMULATION RUN"
+                is_simulation_run = True
+        elif key == 'i':
+            print "Initial Posture"
+            qdes = np.array(np.zeros(cf.dof)) 
+        elif key == 'h':
+            print "Home Posture"
+            qdes = np.array([0.1, -1.57, 0.3, 0.4, 0.5, 0.6, 0.7]) 
+
+    if is_simulation_run:
+        if vrep.doNextStep: # for synchronize      
+            vrep.doNextStep=False  
+            q, qdot = vrep.getMotorState() #Read Device
+            
+            if is_first:
+                qdes = q
+                is_first = False 
+
+            qdes = np.array(qdes) 
+            vrep.setMotorState(qdes)   
+            
+            client.simxSynchronousTrigger()
+
     client.simxSpinOnce()
-    #q, qdot =vrep.getMotorState()
+    
 
 client.simxStopSimulation(client.simxDefaultPublisher())
+print "Simulation finished"
 
-print "finished"
+#TODO: How to terminate server???
